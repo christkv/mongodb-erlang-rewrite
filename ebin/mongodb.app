@@ -2,7 +2,8 @@
  [{description, "Mongodb Client"},
   {vsn, "0.0.1"},
   {modules, [
-             wireprotocol_tests
+             wireprotocol_tests,
+             mongodb_wire
             ]},
   {applications, [
                   kernel,
