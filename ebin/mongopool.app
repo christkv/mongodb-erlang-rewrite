@@ -1,0 +1,9 @@
+{application,mongopool,
+             [{description,"mongopool"},
+              {vsn,"0.1"},
+              {registered,[]},
+              {applications,[kernel,stdlib]},
+              {mod,{mongopool_app,[]}},
+              {env,[]},
+              {modules,[mongo_socket,mongodb_wire,mongopool,mongopool_app,
+                        mongopool_connection_sup,mongopool_sup]}]}.

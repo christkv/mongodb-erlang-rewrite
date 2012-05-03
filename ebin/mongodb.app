@@ -3,7 +3,8 @@
   {vsn, "0.0.1"},
   {modules, [
              wireprotocol_tests,
-             mongodb_wire
+             mongodb_wire,
+             mongopool_app_tests,
             ]},
   {applications, [
                   kernel,

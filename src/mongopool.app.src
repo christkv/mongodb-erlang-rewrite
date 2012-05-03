@@ -1,0 +1,7 @@
+{application, mongopool,
+ [{description, "mongopool"},
+  {vsn, "0.1"},
+  {registered, []},
+  {applications, [kernel, stdlib]},
+  {mod, {mongopool_app, []}},
+  {env, []}]}.
