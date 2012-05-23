@@ -191,7 +191,7 @@ get_timeout() ->
 is_master(Pid) ->
 	erlang:display("############################################### is_master"),
 	% Call the sever process for this given socket
-	gen_server:call(Pid, {q, [{bson:utf8("is_master"), 1}], get_timeout()}, infinity).	
+	gen_server:call(Pid, {q, [{bson:utf8("isMaster"), 1}], get_timeout()}, infinity).	
 
 %% ====================================================================
 %% handle calls via server
@@ -207,32 +207,21 @@ handle_call(stop, _From, State) ->
 
 % Stop the connection
 handle_call({q, Document, Timeout}, _From, State) ->
-	erlang:display("----------------------------------- handle_call : query:0"),
-	erlang:display(Document),
 	% serialize the document to a bson object
 	BsonDocument = bson:serialize(Document),
-	erlang:display("----------------------------------- handle_call : query:1"),
-	erlang:display(binary_to_list(BsonDocument)),
 	% create a query binary query message
-	% QueryBinary = mongodb_wire:create_query(mongopool:next_requestid(), <<"admin.$cmd">>, 0, -1, [], BsonDocument, <<>>),	
-	% QueryBinary = <<53,0,0,0,0,0,0,0,0,0,0,0,212,7,0,0,16,0,0,0,108,111,99,97,108,0,0,0,0,0,255,255,255,255,19,0,0,0,16,105,115,109,97,115,116,101,114,0,1,0,0,0,0>>,
-	QueryBinary = list_to_binary([58,0,0,0,0,0,0,0,0,0,0,0,212,7,0,0,16,0,0,0,97,100,109,105,110,46,36,99,109,100,0,0,0,0,0,255,255,255,255,19,0,0,0,16,105,115,109,97,115,116,101,114,0,1,0,0,0,0]),
-	erlang:display("----------------------------------- handle_call : query:2"),
-	erlang:display(binary_to_list(QueryBinary)),
-	% erlang:display(State#state.sock),
-
+  QueryBinary = mongodb_wire:create_query(mongopool:next_requestid(), <<"admin.$cmd">>, 0, -1, [], BsonDocument, <<>>), 
 	% fire off the message
 	gen_tcp:send(State#state.sock, QueryBinary),
 	% fetch the first 
 	{ok, <<?get_int32u (N)>>} = gen_tcp:recv(State#state.sock, 4, Timeout),
-	erlang:display("----------------------------------- handle_call : query:3"),
-	erlang:display(N),
 	% fetch the rest of the message
 	{ok, BinaryResponse} = gen_tcp:recv(State#state.sock, N - 4, Timeout),
-	erlang:display("----------------------------------- handle_call : query:4"),
-	erlang:display(binary_to_list(BinaryResponse)),
+	erlang:display("-------------------------------------------------------------------------------------------- 0"),
 	% pick apart the message
 	MongoReply = mongodb_wire:unpack_mongo_reply(BinaryResponse),
+	erlang:display("-------------------------------------------------------------------------------------------- 1"),
+	erlang:display(MongoReply),
 	
 	
 	{noreply};

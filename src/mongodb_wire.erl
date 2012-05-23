@@ -18,6 +18,8 @@ unpack_mongo_reply(BinaryMessage) when is_binary(BinaryMessage) ->
     ?get_int32u (StartingFrom),
     ?get_int32u (NumberReturned),
     BsonDocuments/binary>> = BinaryMessage,
+  % deserialize all the bson documents
+  Docs = documents_to_docs(NumberReturned, BsonDocuments),
   % package the results up as a property list
   [{request_id, RequestID}, 
    {response_to, ResponseTo},
@@ -30,16 +32,18 @@ unpack_mongo_reply(BinaryMessage) when is_binary(BinaryMessage) ->
    {cursor_id, CursorID},
    {starting_from, StartingFrom},
    {number_returned, NumberReturned},
-   {docs, bson:deserialize(BsonDocuments)}].
+   {docs, Docs}].
   
 documents_to_docs(N, BsonDocument) when is_integer(N), is_binary(BsonDocument), byte_size(BsonDocument) > 0 ->
   % unpack length of document
   <<?get_int32u (DocumentLength), _/binary>> = BsonDocument,
   % split of the document
   <<FirstDocument:DocumentLength/binary, Reminder/binary>> = BsonDocument,
-  % deserialize the document
-  [bson:deserialize(BsonDocument)] ++ documents_to_docs(N - 1, Reminder);
-documents_to_docs(0 , _) -> [].
+  % deserialize the bson document
+  Document = bson:deserialize(FirstDocument),
+  % Deserialize the next document
+  [Document] ++ documents_to_docs(N - 1, Reminder);
+documents_to_docs(N , _) when N =< 0 -> [].
 
 % 	Header
 %   	int32   messageLength;
