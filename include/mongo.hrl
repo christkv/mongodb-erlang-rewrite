@@ -2,6 +2,7 @@
 -define (put_int8u (N), (N):8/unsigned-little).
 -define (put_int32u (N), (N):32/unsigned-little).
 -define (put_int64u (N), (N):64/unsigned-little).
+-define (put_int32 (N), (N):32/signed-little).
 
 -define (get_int32u (N), N:32/unsigned-little).
 -define (get_int64u (N), N:64/unsigned-little).

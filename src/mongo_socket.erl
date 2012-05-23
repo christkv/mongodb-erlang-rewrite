@@ -1,6 +1,8 @@
 -module(mongo_socket).
 % Include all the socket functions
 -include_lib("kernel/include/inet.hrl").
+% Include the macros for writing code
+-include ("mongo.hrl").
 % Run the socket as a general otp process
 -behaviour(gen_server).
 % -compile(export_all).
@@ -9,10 +11,14 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
+% All exported usage methods
+-export([is_master/1]).
+
 %% ====================================================================
 %% constants
 %% ====================================================================
 -define(INITIAL_RECONNECT_INTERVAL, 500).
+-define(DEFAULT_TIMEOUT, 60000).
 
 %% ====================================================================
 %% defined type
@@ -100,7 +106,7 @@ terminate(_Reason, _State) ->
 connect(State) when State#state.sock =:= undefined ->
 	#state{address = Address, port = Port, connects = Connects} = State,
 	case gen_tcp:connect(Address, Port,
-             [binary, {active, once}, {packet, 4}, {header, 1}],
+             [binary, {active, false}, {packet, 0}],
              State#state.connect_timeout) of
 		{ok, Sock} ->
 			{ok, State#state{sock = Sock, connects = Connects+1,
@@ -108,6 +114,37 @@ connect(State) when State#state.sock =:= undefined ->
 		Error ->
 			Error
 	end.
+	
+%% @private
+%% Disconnect socket if connected
+disconnect(State) ->
+	erlang:display("----------------------------------- disconnect"),
+  % %% Tell any pending requests we've disconnected
+  % _ = case State#state.active of
+  %         undefined ->
+  %             ok;
+  %         Request ->
+  %             send_caller({error, disconnected}, Request)
+  %     end,
+  %% Make sure the connection is really closed
+  case State#state.sock of
+      undefined ->
+          ok;
+      Sock ->
+          gen_tcp:close(Sock)
+  end,
+	NewState = State#state{sock = undefined, active = undefined},
+	{stop, disconnected, NewState}.
+  % %% Decide whether to reconnect or exit
+  % NewState = State#state{sock = undefined, active = undefined},
+  % case State#state.auto_reconnect of
+  %     true ->
+  %         %% Schedule the reconnect message and return state
+  %         erlang:send_after(State#state.reconnect_interval, self(), reconnect),
+  %         {noreply, increase_reconnect_interval(NewState)};
+  %     false ->
+  %         {stop, disconnected, NewState}
+  % end.
 
 %% ====================================================================
 %% internal functions
@@ -136,10 +173,118 @@ parse_options([{auto_reconnect,Bool}|Options], State) when
 parse_options([auto_reconnect|Options], State) ->
     parse_options([{auto_reconnect, true}|Options], State).
 
+%% @doc Return the default or application set timeout for the driver
+get_timeout() ->
+  case application:get_env(mongodb, timeout) of
+	{ok, Timeout} ->
+		Timeout;
+	undefined ->
+		?DEFAULT_TIMEOUT
+  end.	
+
+%% ====================================================================
+%% server methods
+%% ====================================================================
+
+%% @doc Send the ismaster command to the server for the given socket
+-spec is_master(pid()) -> {ok, ctx()} | {error, term()}.
+is_master(Pid) ->
+	erlang:display("############################################### is_master"),
+	% Call the sever process for this given socket
+	gen_server:call(Pid, {q, [{bson:utf8("is_master"), 1}], get_timeout()}, infinity).	
 
 %% ====================================================================
 %% handle calls via server
 %% ====================================================================
-handle_call(_, _, _) -> 
+
+% Stop the connection
+handle_call(stop, _From, State) ->
+	erlang:display("----------------------------------- handle_call : stop"),
+	% Disconnect the socket
+	_ = disconnect(State),
+	% return the state that the socket is properly closed
+	{stop, normal, ok, State};
+
+% Stop the connection
+handle_call({q, Document, Timeout}, _From, State) ->
+	erlang:display("----------------------------------- handle_call : query:0"),
+	erlang:display(Document),
+	% serialize the document to a bson object
+	BsonDocument = bson:serialize(Document),
+	erlang:display("----------------------------------- handle_call : query:1"),
+	erlang:display(binary_to_list(BsonDocument)),
+	% create a query binary query message
+	% QueryBinary = mongodb_wire:create_query(mongopool:next_requestid(), <<"admin.$cmd">>, 0, -1, [], BsonDocument, <<>>),	
+	% QueryBinary = <<53,0,0,0,0,0,0,0,0,0,0,0,212,7,0,0,16,0,0,0,108,111,99,97,108,0,0,0,0,0,255,255,255,255,19,0,0,0,16,105,115,109,97,115,116,101,114,0,1,0,0,0,0>>,
+	QueryBinary = list_to_binary([58,0,0,0,0,0,0,0,0,0,0,0,212,7,0,0,16,0,0,0,97,100,109,105,110,46,36,99,109,100,0,0,0,0,0,255,255,255,255,19,0,0,0,16,105,115,109,97,115,116,101,114,0,1,0,0,0,0]),
+	erlang:display("----------------------------------- handle_call : query:2"),
+	erlang:display(binary_to_list(QueryBinary)),
+	% erlang:display(State#state.sock),
+
+	% fire off the message
+	gen_tcp:send(State#state.sock, QueryBinary),
+	% fetch the first 
+	{ok, <<?get_int32u (N)>>} = gen_tcp:recv(State#state.sock, 4, Timeout),
+	erlang:display("----------------------------------- handle_call : query:3"),
+	erlang:display(N),
+	% fetch the rest of the message
+	{ok, BinaryResponse} = gen_tcp:recv(State#state.sock, N - 4, Timeout),
+	erlang:display("----------------------------------- handle_call : query:4"),
+	erlang:display(binary_to_list(BinaryResponse)),
+	% pick apart the message
+	MongoReply = mongodb_wire:unpack_mongo_reply(BinaryResponse),
+	
+	
+	{noreply};
+
+ 	% receive
+ 	%         {tcp,S,Data} ->
+ 	%             erlang:display("-------------------------------------- DATA coming back"),
+ 	% 						erlang:display(binary_to_list(Data));
+ 	%         {tcp_closed,S} ->
+ 	%             % io:format("Socket ~w closed [~w]~n",[S,self()]),
+ 	%             ok
+ 	%    end;
+	
+	% fetch the first 
+	% <<?get_int32u (N)>> = gen_tcp:recv(State#state.sock, 4, Timeout),
+	% BinaryResponse = gen_tcp:recv(State#state.sock, N - 4, Timeout),
+	% B = gen_tcp:recv(State#state.sock, 4, Timeout),
+	% erlang:display("----------------------------------- handle_call : query:3"),
+	% erlang:display(B),
+	% erlang:display(binary_to_list(BinaryResponse)),
+
+	% {noreply};
+	
+	% % if we are disconnected queue the message
+	%   case State#state.queue_if_disconnected of
+	%   true ->
+	% 		{noreply, queue_request(new_request(Msg, From, Timeout), State)};
+	%   false ->
+	% 		{reply, {error, disconnected}, State}
+	%   end;
+	% {noreply};
+	% % Disconnect the socket
+	% _ = disconnect(State),
+	% % return the state that the socket is properly closed
+	% {stop, normal, ok, State};
+
+% Handle queries
+handle_call(CallName, From, State) -> 
 	erlang:display("----------------------------------- handle_call"),
+	erlang:display(CallName),
+	erlang:display(From),
+	erlang:display(State),
 	{noreply}.
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	

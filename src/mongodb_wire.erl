@@ -1,9 +1,45 @@
 -module(mongodb_wire).
 
--export([create_insert/4, create_update/6, create_query/6, create_query/7, create_get_more/4, create_delete/4, create_kill_cursors/3]).
+-export([create_insert/4, create_update/6, create_query/6, create_query/7, create_get_more/4, create_delete/4, create_kill_cursors/3, unpack_mongo_reply/1]).
 
 % Include the macros for writing code
 -include ("mongo.hrl").
+
+%
+%
+% Unpack a MongoReply message
+unpack_mongo_reply(BinaryMessage) when is_binary(BinaryMessage) ->
+  % unpack the binary message header (length has been shared off by read from socket)
+  <<?get_int32u (RequestID), 
+    ?get_int32u (ResponseTo), 
+    ?get_int32u (OpCode),
+    CursorNotFound:1, QueryFailure:1, ShardConfigState:1, AwaitCapable:1, _:28,
+    ?get_int64u (CursorID),
+    ?get_int32u (StartingFrom),
+    ?get_int32u (NumberReturned),
+    BsonDocuments/binary>> = BinaryMessage,
+  % package the results up as a property list
+  [{request_id, RequestID}, 
+   {response_to, ResponseTo},
+   {op_code, OpCode},
+   {flags, 
+    [{cursor_not_found, CursorNotFound}, 
+     {query_failure, QueryFailure}, 
+     {shard_config_state, ShardConfigState}, 
+     {await_capable, AwaitCapable}]},
+   {cursor_id, CursorID},
+   {starting_from, StartingFrom},
+   {number_returned, NumberReturned},
+   {docs, bson:deserialize(BsonDocuments)}].
+  
+documents_to_docs(N, BsonDocument) when is_integer(N), is_binary(BsonDocument), byte_size(BsonDocument) > 0 ->
+  % unpack length of document
+  <<?get_int32u (DocumentLength), _/binary>> = BsonDocument,
+  % split of the document
+  <<FirstDocument:DocumentLength/binary, Reminder/binary>> = BsonDocument,
+  % deserialize the document
+  [bson:deserialize(BsonDocument)] ++ documents_to_docs(N - 1, Reminder);
+documents_to_docs(0 , _) -> [].
 
 % 	Header
 %   	int32   messageLength;
@@ -104,7 +140,7 @@ create_query(RequestID, FullCollectionName, NumberToSkip, NumberToReturn, FlagsL
 			, Flags/binary
 			, FullCollectionName/binary, 0	% cstring terminated with 0
 			, ?put_int32u(NumberToSkip)
-			, ?put_int32u(NumberToReturn)
+			, ?put_int32(NumberToReturn)
 			, Query/binary
 			, Fields/binary
 		>>,

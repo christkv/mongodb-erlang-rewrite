@@ -18,6 +18,8 @@
          handle_info/2,
          terminate/2,
          code_change/3]).
+-export([next_requestid/0]).
+
 -record(state, {host, port, pids}).
 
 %% @type host() = string() | atom().
@@ -52,12 +54,14 @@ execute(Fun) ->
 
 %% @spec start_link() -> {ok, pid()} | {error, any()}
 %% @doc Starts the server.
-start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+start_link() -> 
+	gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 %% @spec start_pool() -> ok | {error, any()}
 %% @doc Starts a connection pool to a server listening on {"127.0.0.1", 27017}.
 %% Note that a pool can only be started once.
-start_pool() -> start_pool("127.0.0.1", 27017).
+start_pool() -> 
+	start_pool("127.0.0.1", 27017).
 
 %% @spec start_pool(host(), integer()) -> ok | {error, any()}
 %% @doc Starts a connection pool to a server listening on {`Host', `Port'}.
@@ -67,16 +71,36 @@ start_pool(Host, Port) when is_integer(Port) ->
 
 %% @spec stop() -> ok
 %% @doc Stops the server.
-stop() -> gen_server:cast(?MODULE, stop).
+stop() -> 
+	gen_server:cast(?MODULE, stop).
 
 %% @hidden
 init([]) ->
-process_flag(trap_exit, true),
-	case [application:get_env(P) || P <- [mongopool_host, mongopool_port]] of
-	  [{ok, Host}, {ok, Port}] when is_integer(Port) ->
-		  {ok, new_state(Host, Port)};
-	  _ -> {ok, undefined}
-	end.
+	% setup counter
+	ets:new (?MODULE, [named_table, public]),	
+	% insert some counters
+	ets:insert (?MODULE, [
+		{oid_counter, 0},
+		{oid_machineprocid, oid_machineprocid()},
+		{requestid_counter, 0} ]),
+	% process flags
+	process_flag(trap_exit, true),
+		case [application:get_env(P) || P <- [mongopool_host, mongopool_port]] of
+		  [{ok, Host}, {ok, Port}] when is_integer(Port) ->
+			  {ok, new_state(Host, Port)};
+		  _ -> {ok, undefined}
+		end.
+
+%% @hidden
+oid_machineprocid() ->
+	OSPid = list_to_integer (os:getpid()),
+	{ok, Hostname} = inet:gethostname(),
+	<<MachineId:3/binary, _/binary>> = erlang:md5 (Hostname),
+	<<MachineId:3/binary, OSPid:16/big>>.
+
+-spec next_requestid () -> mongo_protocol:requestid(). % IO
+%@doc Fresh request id
+next_requestid() -> ets:update_counter (?MODULE, requestid_counter, 1).
 
 %% @hidden
 handle_call({start_pool, Host, Port}, _From, undefined) ->
@@ -100,15 +124,22 @@ handle_call(_Request, _From, State) -> {reply, ok, State}.
 handle_cast({check_in, Pid}, State=#state{pids=Pids}) ->
 	NewPids = queue:in(Pid, Pids),
 	{noreply, State#state{pids=NewPids}};
-handle_cast(stop, State) -> {stop, normal, State};
-handle_cast(_Msg, State) -> {noreply, State}.
+handle_cast(stop, State) -> 
+	{stop, normal, State};
+handle_cast(_Msg, State) -> 
+	{noreply, State}.
 
 %% @hidden
 handle_info(_Info, State) -> {noreply, State}.
 
 %% @hidden
-terminate(_Reason, undefined) -> ok;
+terminate(_Reason, undefined) -> 
+	% remove ets table
+	ets:delete(?MODULE), ok;
 terminate(_Reason, #state{pids=Pids}) ->
+	% remove ets table
+	ets:delete(?MODULE),
+	% stop the pool
 	StopFun =
 	  fun(Pid) ->
 		  case is_process_alive(Pid) of
