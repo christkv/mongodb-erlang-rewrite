@@ -55,7 +55,35 @@ execute(Fun) ->
 %% @spec start_link() -> {ok, pid()} | {error, any()}
 %% @doc Starts the server.
 start_link() -> 
-	gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+  % execute isMaster to get the details about the connection
+  erlang:display("------------------------------------------------------- start_link()"),
+  % start the pool
+	Result = gen_server:start_link({local, ?MODULE}, ?MODULE, [], []),
+	% if it's ok execute is_master
+	case Result of
+	  {ok, Pid} ->
+	    % Execute is_master
+      Fun = fun(C) -> mongo_socket:is_master(C) end,
+      % The result from calling isMaster
+	    IsMasterResult = mongopool:execute(Fun),
+	    erlang:display(IsMasterResult),
+	    % Unpack the ismaster command
+	    case IsMasterResult of
+	      {ok, {reply, Reply}} ->
+          % grab the first returned doc
+          FirstDoc = lists:nth(1, proplists:get_value(docs, Reply)),
+          % grab the max bson size for documents
+          MaxBsonObjectSize = proplists:get_value(bson:utf8("maxBsonObjectSize"), FirstDoc),
+          % add the max object size to the ets table
+        	ets:insert(?MODULE, [{max_bson_object_size, MaxBsonObjectSize}]),
+        	% return the result
+          Result;
+	      {ok, Error} ->
+	        erlang:display(Error)
+	    end;
+	  _ ->
+	    Result
+	end.
 
 %% @spec start_pool() -> ok | {error, any()}
 %% @doc Starts a connection pool to a server listening on {"127.0.0.1", 27017}.
@@ -67,7 +95,9 @@ start_pool() ->
 %% @doc Starts a connection pool to a server listening on {`Host', `Port'}.
 %% Note that a pool can only be started once.
 start_pool(Host, Port) when is_integer(Port) ->
-	gen_server:call(?MODULE, {start_pool, Host, Port}).
+  % start the pool
+	Result = gen_server:call(?MODULE, {start_pool, Host, Port}),
+	Result.
 
 %% @spec stop() -> ok
 %% @doc Stops the server.
@@ -167,9 +197,12 @@ new_state(Host, Port) ->
 %% supervisor, otherwise returns error.
 new_connection(Host, Port) ->
 	case supervisor:start_child(mongopool_connection_sup, [Host, Port]) of
-	  {ok, Pid} when is_pid(Pid) -> {ok, Pid};
-	  {ok, Pid, _} when is_pid(Pid) -> {ok, Pid};
-	  _ -> error
+	  {ok, Pid} when is_pid(Pid) -> 
+	    {ok, Pid};
+	  {ok, Pid, _} when is_pid(Pid) -> 
+	    {ok, Pid};
+	  _ -> 
+	    error
 	end.
 
 %% @spec next_pid(host(), integer(), queue()) -> {ok, pid(), queue()} |

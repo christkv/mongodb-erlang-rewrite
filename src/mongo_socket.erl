@@ -75,7 +75,6 @@ handle_info(_, State) ->
 	{noreply, State}.
 
 init([Address, Port, Options]) ->
-	erlang:display("----------------------------------- init"),
   %% Schedule a reconnect as the first action.  If the server is up then
   %% the handle_info(reconnect) will run before any requests can be sent.
   State = parse_options(Options, 
@@ -189,9 +188,8 @@ get_timeout() ->
 %% @doc Send the ismaster command to the server for the given socket
 -spec is_master(pid()) -> {ok, ctx()} | {error, term()}.
 is_master(Pid) ->
-	erlang:display("############################################### is_master"),
-	% Call the sever process for this given socket
-	gen_server:call(Pid, {q, [{bson:utf8("isMaster"), 1}], get_timeout()}, infinity).	
+	% Call the server process for this given socket
+	gen_server:call(Pid, {q, [{bson:utf8("isMaster"), 1}], get_timeout()}, infinity).
 
 %% ====================================================================
 %% handle calls via server
@@ -205,58 +203,41 @@ handle_call(stop, _From, State) ->
 	% return the state that the socket is properly closed
 	{stop, normal, ok, State};
 
-% Stop the connection
+% 
+% Handle any queries
+%
 handle_call({q, Document, Timeout}, _From, State) ->
 	% serialize the document to a bson object
 	BsonDocument = bson:serialize(Document),
 	% create a query binary query message
   QueryBinary = mongodb_wire:create_query(mongopool:next_requestid(), <<"admin.$cmd">>, 0, -1, [], BsonDocument, <<>>), 
-	% fire off the message
-	gen_tcp:send(State#state.sock, QueryBinary),
-	% fetch the first 
-	{ok, <<?get_int32u (N)>>} = gen_tcp:recv(State#state.sock, 4, Timeout),
-	% fetch the rest of the message
-	{ok, BinaryResponse} = gen_tcp:recv(State#state.sock, N - 4, Timeout),
-	erlang:display("-------------------------------------------------------------------------------------------- 0"),
-	% pick apart the message
-	MongoReply = mongodb_wire:unpack_mongo_reply(BinaryResponse),
-	erlang:display("-------------------------------------------------------------------------------------------- 1"),
-	erlang:display(MongoReply),
-	
-	
-	{noreply};
-
- 	% receive
- 	%         {tcp,S,Data} ->
- 	%             erlang:display("-------------------------------------- DATA coming back"),
- 	% 						erlang:display(binary_to_list(Data));
- 	%         {tcp_closed,S} ->
- 	%             % io:format("Socket ~w closed [~w]~n",[S,self()]),
- 	%             ok
- 	%    end;
-	
-	% fetch the first 
-	% <<?get_int32u (N)>> = gen_tcp:recv(State#state.sock, 4, Timeout),
-	% BinaryResponse = gen_tcp:recv(State#state.sock, N - 4, Timeout),
-	% B = gen_tcp:recv(State#state.sock, 4, Timeout),
-	% erlang:display("----------------------------------- handle_call : query:3"),
-	% erlang:display(B),
-	% erlang:display(binary_to_list(BinaryResponse)),
-
-	% {noreply};
-	
-	% % if we are disconnected queue the message
-	%   case State#state.queue_if_disconnected of
-	%   true ->
-	% 		{noreply, queue_request(new_request(Msg, From, Timeout), State)};
-	%   false ->
-	% 		{reply, {error, disconnected}, State}
-	%   end;
-	% {noreply};
-	% % Disconnect the socket
-	% _ = disconnect(State),
-	% % return the state that the socket is properly closed
-	% {stop, normal, ok, State};
+	% fire off message and ensure we have no error sending the message
+	case gen_tcp:send(State#state.sock, QueryBinary) of
+	  ok ->
+	    % read the size of the message packet
+	    case gen_tcp:recv(State#state.sock, 4, Timeout) of
+	      {ok, <<?get_int32u (N)>>} ->
+	        % read reminder of the message
+	        case gen_tcp:recv(State#state.sock, N - 4, Timeout) of
+	          {ok, BinaryResponse} ->
+	            % Unpack the mongo reply
+	            MongoReply = mongodb_wire:unpack_mongo_reply(BinaryResponse),
+	            % Fetch the first document from the list of docs available
+	            FirstDoc = lists:nth(1, proplists:get_value(docs, MongoReply)),
+	            % Check if we have an error (signaled by the errmsg field)
+              case proplists:get_value(bson:utf8("errmsg"), FirstDoc) of
+                undefined -> {reply, {reply, MongoReply}, State};
+	              Error -> {reply, {error, Error}, State}
+	            end;
+	          Error ->
+        	    {reply, Error, State}
+	        end;
+	      Error ->
+    	    {reply, Error, State}
+	    end;
+	  Error ->
+	    {reply, Error, State}
+	end;
 
 % Handle queries
 handle_call(CallName, From, State) -> 
