@@ -49,29 +49,29 @@
                 reconnect_interval=?INITIAL_RECONNECT_INTERVAL :: non_neg_integer()}).
 
 start_link(Address, Port) ->
-	erlang:display("----------------------------------- start_link 0"),	
+  % erlang:display("----------------------------------- start_link 0"), 
 	start_link(Address, Port, []).
 
 start_link(Address, Port, Options) when is_list(Options) ->
-	erlang:display("----------------------------------- start_link 1"),	
+  % erlang:display("----------------------------------- start_link 1"), 
 	gen_server:start_link(?MODULE, [Address, Port, Options], []).
 
 stop(Pid) ->
-	erlang:display("----------------------------------- stop"),	
+  % erlang:display("----------------------------------- stop"), 
 	gen_server:call(Pid, stop).
 
 %% @private
 code_change(_OldVsn, State, _Extra) -> 
-	erlang:display("----------------------------------- code_change"),
+  % erlang:display("----------------------------------- code_change"),
 	{ok, State}.
 
 %% @private
 handle_cast(_Msg, State) ->
-	erlang:display("----------------------------------- handle_cast"),
+  % erlang:display("----------------------------------- handle_cast"),
 	{noreply, State}.
 
 handle_info(_, State) ->
-	erlang:display("----------------------------------- handle_info"),
+  % erlang:display("----------------------------------- handle_info"),
 	{noreply, State}.
 
 init([Address, Port, Options]) ->
@@ -94,7 +94,8 @@ init([Address, Port, Options]) ->
 
 %% @private
 terminate(_Reason, _State) -> 
-	erlang:display("----------------------------------- terminate"),
+  % erlang:display("----------------------------------- terminate"),
+  %   erlang:display(_Reason),
 	ok.
 
 %% ====================================================================
@@ -117,7 +118,7 @@ connect(State) when State#state.sock =:= undefined ->
 %% @private
 %% Disconnect socket if connected
 disconnect(State) ->
-	erlang:display("----------------------------------- disconnect"),
+  % erlang:display("----------------------------------- disconnect"),
   % %% Tell any pending requests we've disconnected
   % _ = case State#state.active of
   %         undefined ->
@@ -197,7 +198,7 @@ is_master(Pid) ->
 
 % Stop the connection
 handle_call(stop, _From, State) ->
-	erlang:display("----------------------------------- handle_call : stop"),
+  % erlang:display("----------------------------------- handle_call : stop"),
 	% Disconnect the socket
 	_ = disconnect(State),
 	% return the state that the socket is properly closed
@@ -226,8 +227,10 @@ handle_call({q, Document, Timeout}, _From, State) ->
 	            FirstDoc = lists:nth(1, proplists:get_value(docs, MongoReply)),
 	            % Check if we have an error (signaled by the errmsg field)
               case proplists:get_value(bson:utf8("errmsg"), FirstDoc) of
-                undefined -> {reply, {reply, MongoReply}, State};
-	              Error -> {reply, {error, Error}, State}
+                undefined -> 
+                  {reply, {reply, MongoReply}, State};
+	              Error -> 
+	                {reply, {error, Error}, State}
 	            end;
 	          Error ->
         	    {reply, Error, State}
@@ -240,11 +243,11 @@ handle_call({q, Document, Timeout}, _From, State) ->
 	end;
 
 % Handle queries
-handle_call(CallName, From, State) -> 
-	erlang:display("----------------------------------- handle_call"),
-	erlang:display(CallName),
-	erlang:display(From),
-	erlang:display(State),
+handle_call(_CallName, _From, _State) -> 
+  % erlang:display("----------------------------------- handle_call"),
+  % erlang:display(CallName),
+  % erlang:display(From),
+  % erlang:display(State),
 	{noreply}.
 	
 	

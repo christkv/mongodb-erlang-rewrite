@@ -55,8 +55,18 @@ execute(Fun) ->
 %% @spec start_link() -> {ok, pid()} | {error, any()}
 %% @doc Starts the server.
 start_link() -> 
+  % erlang:display("==================================================== INIT"),
+  % erlang:display(?MODULE),
+  % setup counter
+  ets:new (?MODULE, [named_table, public]),	
+  % insert some counters
+  ets:insert (?MODULE, [
+  	{oid_counter, 0},
+  	{oid_machineprocid, oid_machineprocid()},
+  	{max_bson_object_size, 0},
+  	{requestid_counter, 0} ]),
   % execute isMaster to get the details about the connection
-  erlang:display("------------------------------------------------------- start_link()"),
+  % erlang:display("------------------------------------------------------- start_link() -- 0"),
   % start the pool
 	Result = gen_server:start_link({local, ?MODULE}, ?MODULE, [], []),
 	% if it's ok execute is_master
@@ -66,7 +76,7 @@ start_link() ->
       Fun = fun(C) -> mongo_socket:is_master(C) end,
       % The result from calling isMaster
 	    IsMasterResult = mongopool:execute(Fun),
-	    erlang:display(IsMasterResult),
+      % erlang:display(IsMasterResult),
 	    % Unpack the ismaster command
 	    case IsMasterResult of
 	      {ok, {reply, Reply}} ->
@@ -74,12 +84,16 @@ start_link() ->
           FirstDoc = lists:nth(1, proplists:get_value(docs, Reply)),
           % grab the max bson size for documents
           MaxBsonObjectSize = proplists:get_value(bson:utf8("maxBsonObjectSize"), FirstDoc),
+          % erlang:display("------------------------------------------------------- start_link() :: 0 -- 0"),
           % add the max object size to the ets table
         	ets:insert(?MODULE, [{max_bson_object_size, MaxBsonObjectSize}]),
+          % erlang:display("------------------------------------------------------- start_link() :: 1 -- 0"),
         	% return the result
           Result;
 	      {ok, Error} ->
-	        erlang:display(Error)
+          % erlang:display("======================================================= ERROR"),
+          % erlang:display(Error),
+	        Error
 	    end;
 	  _ ->
 	    Result
@@ -102,17 +116,13 @@ start_pool(Host, Port) when is_integer(Port) ->
 %% @spec stop() -> ok
 %% @doc Stops the server.
 stop() -> 
+  % clear out the ets table
+  ets:delete(?MODULE),
+  % close the pool
 	gen_server:cast(?MODULE, stop).
 
 %% @hidden
 init([]) ->
-	% setup counter
-	ets:new (?MODULE, [named_table, public]),	
-	% insert some counters
-	ets:insert (?MODULE, [
-		{oid_counter, 0},
-		{oid_machineprocid, oid_machineprocid()},
-		{requestid_counter, 0} ]),
 	% process flags
 	process_flag(trap_exit, true),
 		case [application:get_env(P) || P <- [mongopool_host, mongopool_port]] of
@@ -163,12 +173,8 @@ handle_cast(_Msg, State) ->
 handle_info(_Info, State) -> {noreply, State}.
 
 %% @hidden
-terminate(_Reason, undefined) -> 
-	% remove ets table
-	ets:delete(?MODULE), ok;
+terminate(_Reason, undefined) -> ok;
 terminate(_Reason, #state{pids=Pids}) ->
-	% remove ets table
-	ets:delete(?MODULE),
 	% stop the pool
 	StopFun =
 	  fun(Pid) ->
@@ -215,11 +221,13 @@ new_connection(Host, Port) ->
 next_pid(Host, Port, Pids) ->
 	case queue:out(Pids) of
 	  {{value, Pid}, NewPids} ->
+      % erlang:display("================================================ have pid"),
 		  case is_process_alive(Pid) of
 		    true -> {ok, Pid, NewPids};
 		    false -> next_pid(Host, Port, NewPids)
 		  end;
 	  {empty, _} ->
+      % erlang:display("================================================ don't pid"),
 		  case new_connection(Host, Port) of
 		    {ok, Pid} -> {ok, Pid, Pids};
 		    error -> {error, Pids}
