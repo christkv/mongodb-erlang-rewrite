@@ -8,6 +8,8 @@
 
 -export([count/0,
          execute/1,
+         authenticate/2,
+         authenticate/3,
          start_link/0,
          start_pool/0,
          start_pool/2,
@@ -51,6 +53,82 @@ execute(Fun) ->
 		  after gen_server:cast(?MODULE, {check_in, Pid}) end;
 	  {error, E} -> {error, E}
 	end.
+	
+-type databasename() :: bson:utf8().
+-type username() :: bson:utf8().
+-type password() :: bson:utf8().
+-type nonce() :: bson:utf8().	
+	
+%% @spec authenticate(username(), password()) -> {ok} | {error, any()}.
+-spec authenticate(username(), password()) -> {ok} | {error, any()}.
+authenticate(Username, Password) -> authenticate(<<"admin">>, Username, Password).
+
+%% @spec authenticate(databasename(), username(), password()) -> {ok} | {error, any()}.
+%% @doc Attempts to authenticate the connection against a specific database
+-spec authenticate(databasename(), username(), password()) -> {ok} | {error, any()}.
+authenticate(DatabaseName, Username, Password) ->
+	case gen_server:call(?MODULE, check_out_all) of
+		{ok, Pids} ->
+      % execute the authentication process across all open connections in the pool
+      AuthenticateFun =
+        fun(Pid) ->
+          case is_process_alive(Pid) of
+            true -> 
+              authenticate_single(Pid, DatabaseName, Username, Password);
+            false -> ok
+          end
+        end,
+      AuthenticationResults = [AuthenticateFun(Pid) || Pid <- queue:to_list(Pids)], 
+      % Calculate the number of valid authentications performed
+      NumberOfValidResults = lists:foldl(fun(X, Sum) -> 
+          case X of
+            [{<<"ok">>, _}] -> 1 + Sum;
+            _ -> 0 + Sum
+          end
+        end, 0, AuthenticationResults),
+      % if the authentication failed we have a lower count of correct authentications than the
+      % number of actual connections
+      if 
+        NumberOfValidResults /= length(AuthenticationResults) -> {error, <<"Authentication failed">>};
+        true -> ok
+      end;
+	  {error, E} -> {error, E}
+	end.
+
+authenticate_single(Connection, DatabaseName, Username, Password) ->
+  % grab the nonce for authentication
+  case mongo_socket:run_command(Connection, [{<<"getnonce">>, 1}]) of
+    {reply, Reply} ->
+      % get the first document
+      FirstDoc = mongo_reply:first_document(Reply),
+      % unpack the nonce
+      Nonce = proplists:get_value(bson:utf8("nonce"), FirstDoc),
+      % hash the nonce, username, password
+      Hash = generate_password_key(Nonce, Username, Password),
+      % auth command
+      AuthCommand = [{<<"authenticate">>, 1}, {<<"user">>, Username}, {<<"nonce">>, Nonce}, {<<"key">>, Hash}],
+      % perform acutal authentication command against the provided database
+      case mongo_socket:run_command(Connection, DatabaseName, AuthCommand) of
+        {reply, AuthReply} ->
+          % Return the first document containing either the result or value
+          lists:nth(1, proplists:get_value(docs, AuthReply));
+        AuthError -> AuthError
+      end;
+    Error -> Error
+  end.
+        
+%% @spec generate_password_key (nonce(), username(), password()) -> bson:utf8().
+%% @doc Generates the mongodb nonce, username, password hash
+-spec generate_password_key (nonce(), username(), password()) -> bson:utf8().
+generate_password_key (Nonce, Username, Password) -> 
+  % Create password hash
+  PasswordHashList = binary_to_list(bin_to_hex:bin_to_hex (crypto:md5 ([Username, <<":mongo:">>, Password]))),
+  % Get the password hash
+  PasswordHash = list_to_binary(string:to_lower(PasswordHashList)),
+  % MD5 hash the whole authentication command and return
+  FinalHashList = binary_to_list(bin_to_hex:bin_to_hex (crypto:md5 ([Nonce, Username, PasswordHash]))),
+  % Return the value
+  list_to_binary(string:to_lower(FinalHashList)).
 
 %% @spec start_link() -> {ok, pid()} | {error, any()}
 %% @doc Starts the server.
@@ -71,7 +149,7 @@ start_link() ->
 	Result = gen_server:start_link({local, ?MODULE}, ?MODULE, [], []),
 	% if it's ok execute is_master
 	case Result of
-	  {ok, Pid} ->
+	  {ok, _} ->
 	    % Execute is_master
       Fun = fun(C) -> mongo_socket:is_master(C) end,
       % The result from calling isMaster
@@ -152,6 +230,8 @@ handle_call({start_pool, _Host, _Port}, _From, State=#state{}) ->
 	{reply, {error, pool_already_started}, State};
 handle_call(check_out, _From, undefined) ->
 	{reply, {error, pool_not_started}, undefined};
+handle_call(check_out_all, _, State=#state{host=Host, port=Port, pids=Pids}) ->
+  {reply, {ok, Pids}, State#state{pids=Pids}};
 handle_call(check_out, _From, State=#state{host=Host, port=Port, pids=Pids}) ->
 	case next_pid(Host, Port, Pids) of
 	  {ok, Pid, NewPids} -> {reply, {ok, Pid}, State#state{pids=NewPids}};

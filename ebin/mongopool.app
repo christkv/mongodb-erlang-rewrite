@@ -5,5 +5,6 @@
               {applications,[kernel,stdlib]},
               {mod,{mongopool_app,[]}},
               {env,[]},
-              {modules,[mongo_socket,mongodb_wire,mongopool,mongopool_app,
-                        mongopool_connection_sup,mongopool_sup]}]}.
+              {modules,[bin_to_hex,mongo_reply,mongo_socket,mongodb_wire,
+                        mongopool,mongopool_app,mongopool_connection_sup,
+                        mongopool_sup]}]}.

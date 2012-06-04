@@ -12,7 +12,7 @@
          terminate/2, code_change/3]).
 
 % All exported usage methods
--export([is_master/1]).
+-export([is_master/1, run_command/2, run_command/3]).
 
 %% ====================================================================
 %% constants
@@ -189,8 +189,16 @@ get_timeout() ->
 %% @doc Send the ismaster command to the server for the given socket
 -spec is_master(pid()) -> {ok, ctx()} | {error, term()}.
 is_master(Pid) ->
-	% Call the server process for this given socket
-	gen_server:call(Pid, {q, [{bson:utf8("isMaster"), 1}], get_timeout()}, infinity).
+	gen_server:call(Pid, {q, <<"admin.$cmd">>, [{bson:utf8("isMaster"), 1}], get_timeout(), 0, -1, []}, infinity).
+
+%% @doc Send the ismaster command to the server for the given socket
+-spec run_command(pid(), binary(), list()) -> {ok, ctx()} | {error, term()}.
+run_command(Pid, DatabaseName, Command) when is_pid(Pid), is_binary(DatabaseName), is_list(Command) ->
+	gen_server:call(Pid, {q, <<DatabaseName/binary, <<".$cmd">>/binary>>, Command, get_timeout(), 0, -1, []}, infinity).
+
+-spec run_command(pid(), list()) -> {ok, ctx()} | {error, term()}.
+run_command(Pid, Command) when is_pid(Pid), is_list(Command) ->
+	gen_server:call(Pid, {q, <<"admin.$cmd">>, Command, get_timeout(), 0, -1, []}, infinity).
 
 %% ====================================================================
 %% handle calls via server
@@ -207,11 +215,11 @@ handle_call(stop, _From, State) ->
 % 
 % Handle any queries
 %
-handle_call({q, Document, Timeout}, _From, State) ->
+handle_call({q, Collection, Document, Timeout, NumberToSkip, NumberToReturn, FlagsList}, _From, State) ->
 	% serialize the document to a bson object
 	BsonDocument = bson:serialize(Document),
 	% create a query binary query message
-  QueryBinary = mongodb_wire:create_query(mongopool:next_requestid(), <<"admin.$cmd">>, 0, -1, [], BsonDocument, <<>>), 
+  QueryBinary = mongodb_wire:create_query(mongopool:next_requestid(), Collection, NumberToSkip, NumberToReturn, FlagsList, BsonDocument, <<>>), 
 	% fire off message and ensure we have no error sending the message
 	case gen_tcp:send(State#state.sock, QueryBinary) of
 	  ok ->
