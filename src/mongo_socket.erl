@@ -12,7 +12,7 @@
          terminate/2, code_change/3]).
 
 % All exported usage methods
--export([is_master/1, run_command/2, run_command/3]).
+-export([is_master/1, insert/4, insert/5, run_command/2, run_command/3, find_one/4]).
 
 %% ====================================================================
 %% constants
@@ -200,6 +200,26 @@ run_command(Pid, DatabaseName, Command) when is_pid(Pid), is_binary(DatabaseName
 run_command(Pid, Command) when is_pid(Pid), is_list(Command) ->
 	gen_server:call(Pid, {q, <<"admin.$cmd">>, Command, get_timeout(), 0, -1, []}, infinity).
 
+%% @doc Insert a document into mongodb
+-spec insert(pid(), binary(), binary(), ctx()) -> {ok, ctx()} | {error, term()}.
+insert(Pid, DatabaseName, CollectionName, Document) when is_pid(Pid), is_binary(DatabaseName), is_binary(CollectionName), is_list(Document) ->
+  insert(Pid, DatabaseName, CollectionName, Document, []).
+
+-spec insert(pid(), binary(), binary(), ctx(), ctx()) -> {ok, ctx()} | {error, term()}.
+insert(Pid, DatabaseName, CollectionName, Document, Options) when is_pid(Pid), is_binary(DatabaseName), is_binary(CollectionName), is_list(Document), is_list(Options) ->
+  gen_server:call(Pid, {i, <<DatabaseName/binary, <<".">>/binary, CollectionName/binary>>, Document, Options, get_timeout()}).
+
+%% @doc Find a single document
+-spec find_one(pid(), binary(), binary(), ctx()) -> {ok, ctx()} | {error, term()}.
+find_one(Pid, DatabaseName, CollectionName, Document) when is_pid(Pid), is_binary(DatabaseName), is_binary(CollectionName), is_list(Document) ->
+  % Fetch the result
+  case gen_server:call(Pid, {q, <<DatabaseName/binary, <<".">>/binary, CollectionName/binary>>, Document, get_timeout(), 0, -1, []}, infinity) of
+    {reply, MongoReply} ->
+      % Return the first document
+      lists:nth(1, proplists:get_value(docs, MongoReply));
+    Error -> Error
+  end.
+
 %% ====================================================================
 %% handle calls via server
 %% ====================================================================
@@ -213,42 +233,35 @@ handle_call(stop, _From, State) ->
 	{stop, normal, ok, State};
 
 % 
-% Handle any queries
+% Handle query commands
 %
 handle_call({q, Collection, Document, Timeout, NumberToSkip, NumberToReturn, FlagsList}, _From, State) ->
 	% serialize the document to a bson object
 	BsonDocument = bson:serialize(Document),
 	% create a query binary query message
   QueryBinary = mongodb_wire:create_query(mongopool:next_requestid(), Collection, NumberToSkip, NumberToReturn, FlagsList, BsonDocument, <<>>), 
-	% fire off message and ensure we have no error sending the message
-	case gen_tcp:send(State#state.sock, QueryBinary) of
-	  ok ->
-	    % read the size of the message packet
-	    case gen_tcp:recv(State#state.sock, 4, Timeout) of
-	      {ok, <<?get_int32u (N)>>} ->
-	        % read reminder of the message
-	        case gen_tcp:recv(State#state.sock, N - 4, Timeout) of
-	          {ok, BinaryResponse} ->
-	            % Unpack the mongo reply
-	            MongoReply = mongodb_wire:unpack_mongo_reply(BinaryResponse),
-	            % Fetch the first document from the list of docs available
-	            FirstDoc = lists:nth(1, proplists:get_value(docs, MongoReply)),
-	            % Check if we have an error (signaled by the errmsg field)
-              case proplists:get_value(bson:utf8("errmsg"), FirstDoc) of
-                undefined -> 
-                  {reply, {reply, MongoReply}, State};
-	              Error -> 
-	                {reply, {error, Error}, State}
-	            end;
-	          Error ->
-        	    {reply, Error, State}
-	        end;
-	      Error ->
-    	    {reply, Error, State}
-	    end;
-	  Error ->
-	    {reply, Error, State}
-	end;
+  % send the message
+  send_and_receive(QueryBinary, false, Timeout, State);
+
+%
+% Handle insert commands
+%
+handle_call({i, FullCollectionName, Document, Options, Timeout}, _From, State) when is_binary(FullCollectionName), is_list(Document), is_list(Options), is_integer(Timeout) ->
+  erlang:display("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ insert"),
+  erlang:display(Document),
+	% serialize the document to a bson object
+  BsonDocument = bson:serialize(Document),
+  erlang:display("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ insert 1"),
+  erlang:display(binary_to_list(BsonDocument)),
+	% create a insert binary message
+  InsertBinary = mongodb_wire:create_insert(mongopool:next_requestid(), FullCollectionName, 0, BsonDocument),
+  erlang:display("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ insert 2"),
+  % send the message
+  case send_and_receive(InsertBinary, true, Timeout, State) of
+    {reply, {reply, ok}, State} ->
+      {reply, {reply, ok}, State};
+    Error -> Error
+  end;  
 
 % Handle queries
 handle_call(_CallName, _From, _State) -> 
@@ -257,6 +270,47 @@ handle_call(_CallName, _From, _State) ->
   % erlang:display(From),
   % erlang:display(State),
 	{noreply}.
+	
+%
+% Send the binary message
+%
+send_and_receive(Binary, SendOnly, Timeout, State) when is_binary(Binary), is_boolean(SendOnly), is_integer(Timeout) -> 
+  % fire off message and ensure we have no error sending the message
+  case gen_tcp:send(State#state.sock, Binary) of
+    ok ->
+      % we are only sending not waiting for a response
+      case SendOnly of
+        true ->
+          {reply, {reply, ok}, State};
+        _ ->
+          % read the size of the message packet
+          case gen_tcp:recv(State#state.sock, 4, Timeout) of
+            {ok, <<?get_int32u (N)>>} ->
+              % read reminder of the message
+              case gen_tcp:recv(State#state.sock, N - 4, Timeout) of
+                {ok, BinaryResponse} ->
+                  % Unpack the mongo reply
+                  MongoReply = mongodb_wire:unpack_mongo_reply(BinaryResponse),
+                  % Fetch the first document from the list of docs available
+                  FirstDoc = lists:nth(1, proplists:get_value(docs, MongoReply)),
+                  % Check if we have an error (signaled by the errmsg field)
+                  case proplists:get_value(bson:utf8("errmsg"), FirstDoc) of
+                    undefined -> 
+                      {reply, {reply, MongoReply}, State};
+                    Error -> 
+                      {reply, {error, Error}, State}
+                  end;
+                Error ->
+            	    {reply, Error, State}
+              end;
+            Error ->
+        	    {reply, Error, State}
+          end
+      end;
+    Error ->
+      {reply, Error, State}
+  end.
+
 	
 	
 	
