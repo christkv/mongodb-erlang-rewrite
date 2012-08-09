@@ -1,4 +1,5 @@
 .eunit
+.test
 deps
 priv
 data
