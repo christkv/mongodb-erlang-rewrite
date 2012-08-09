@@ -16,7 +16,7 @@ clean:
 distclean: clean
 	@$(REBAR) delete-deps
 test: clean all
-	@$(REBAR) eunit apps=mongodb
+	@$(REBAR) eunit
 # # Run a set of test for normal connection.
 # test: clean all
 # 	@$(ERL) -pa $(PA) -eval 'mongodb_tests:test(), init:stop().' -noshell

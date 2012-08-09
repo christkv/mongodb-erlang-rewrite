@@ -49,54 +49,54 @@
                 reconnect_interval=?INITIAL_RECONNECT_INTERVAL :: non_neg_integer()}).
 
 start_link(Address, Port) ->
-  % erlang:display("----------------------------------- start_link 0"), 
-	start_link(Address, Port, []).
+  % erlang:display("----------------------------------- start_link 0"),
+  start_link(Address, Port, []).
 
 start_link(Address, Port, Options) when is_list(Options) ->
-  % erlang:display("----------------------------------- start_link 1"), 
-	gen_server:start_link(?MODULE, [Address, Port, Options], []).
+  % erlang:display("----------------------------------- start_link 1"),
+  gen_server:start_link(?MODULE, [Address, Port, Options], []).
 
 stop(Pid) ->
-  % erlang:display("----------------------------------- stop"), 
-	gen_server:call(Pid, stop).
+  % erlang:display("----------------------------------- stop"),
+  gen_server:call(Pid, stop).
 
 %% @private
-code_change(_OldVsn, State, _Extra) -> 
+code_change(_OldVsn, State, _Extra) ->
   % erlang:display("----------------------------------- code_change"),
-	{ok, State}.
+  {ok, State}.
 
 %% @private
 handle_cast(_Msg, State) ->
   % erlang:display("----------------------------------- handle_cast"),
-	{noreply, State}.
+  {noreply, State}.
 
 handle_info(_, State) ->
   % erlang:display("----------------------------------- handle_info"),
-	{noreply, State}.
+  {noreply, State}.
 
 init([Address, Port, Options]) ->
   %% Schedule a reconnect as the first action.  If the server is up then
   %% the handle_info(reconnect) will run before any requests can be sent.
-  State = parse_options(Options, 
-				#state{address = Address, port = Port, queue = queue:new()}),
+  State = parse_options(Options,
+        #state{address = Address, port = Port, queue = queue:new()}),
   case State#state.auto_reconnect of
-		true ->
-			self() ! reconnect,
-			{ok, State};
-		false ->
-			case connect(State) of
-				{error, Reason} ->
-					{stop, {tcp, Reason}};
-				Ok ->
-					Ok
-			end
+    true ->
+      self() ! reconnect,
+      {ok, State};
+    false ->
+      case connect(State) of
+        {error, Reason} ->
+          {stop, {tcp, Reason}};
+        Ok ->
+          Ok
+      end
   end.
 
 %% @private
-terminate(_Reason, _State) -> 
+terminate(_Reason, _State) ->
   % erlang:display("----------------------------------- terminate"),
   %   erlang:display(_Reason),
-	ok.
+  ok.
 
 %% ====================================================================
 %% internal connection functions
@@ -104,17 +104,17 @@ terminate(_Reason, _State) ->
 %% @private
 %% Connect the socket if disconnected
 connect(State) when State#state.sock =:= undefined ->
-	#state{address = Address, port = Port, connects = Connects} = State,
-	case gen_tcp:connect(Address, Port,
+  #state{address = Address, port = Port, connects = Connects} = State,
+  case gen_tcp:connect(Address, Port,
              [binary, {active, false}, {packet, 0}],
              State#state.connect_timeout) of
-		{ok, Sock} ->
-			{ok, State#state{sock = Sock, connects = Connects+1,
-			                 reconnect_interval = ?INITIAL_RECONNECT_INTERVAL}};
-		Error ->
-			Error
-	end.
-	
+    {ok, Sock} ->
+      {ok, State#state{sock = Sock, connects = Connects+1,
+                       reconnect_interval = ?INITIAL_RECONNECT_INTERVAL}};
+    Error ->
+      Error
+  end.
+
 %% @private
 %% Disconnect socket if connected
 disconnect(State) ->
@@ -133,8 +133,8 @@ disconnect(State) ->
       Sock ->
           gen_tcp:close(Sock)
   end,
-	NewState = State#state{sock = undefined, active = undefined},
-	{stop, disconnected, NewState}.
+  NewState = State#state{sock = undefined, active = undefined},
+  {stop, disconnected, NewState}.
   % %% Decide whether to reconnect or exit
   % NewState = State#state{sock = undefined, active = undefined},
   % case State#state.auto_reconnect of
@@ -176,11 +176,11 @@ parse_options([auto_reconnect|Options], State) ->
 %% @doc Return the default or application set timeout for the driver
 get_timeout() ->
   case application:get_env(mongodb, timeout) of
-	{ok, Timeout} ->
-		Timeout;
-	undefined ->
-		?DEFAULT_TIMEOUT
-  end.	
+  {ok, Timeout} ->
+    Timeout;
+  undefined ->
+    ?DEFAULT_TIMEOUT
+  end.
 
 %% ====================================================================
 %% server methods
@@ -189,16 +189,16 @@ get_timeout() ->
 %% @doc Send the ismaster command to the server for the given socket
 -spec is_master(pid()) -> {ok, ctx()} | {error, term()}.
 is_master(Pid) ->
-	gen_server:call(Pid, {q, <<"admin.$cmd">>, [{bson:utf8("isMaster"), 1}], get_timeout(), 0, -1, []}, infinity).
+  gen_server:call(Pid, {q, <<"admin.$cmd">>, [{bson:utf8("isMaster"), 1}], get_timeout(), 0, -1, []}, infinity).
 
 %% @doc Send the ismaster command to the server for the given socket
 -spec run_command(pid(), binary(), list()) -> {ok, ctx()} | {error, term()}.
 run_command(Pid, DatabaseName, Command) when is_pid(Pid), is_binary(DatabaseName), is_list(Command) ->
-	gen_server:call(Pid, {q, <<DatabaseName/binary, <<".$cmd">>/binary>>, Command, get_timeout(), 0, -1, []}, infinity).
+  gen_server:call(Pid, {q, <<DatabaseName/binary, <<".$cmd">>/binary>>, Command, get_timeout(), 0, -1, []}, infinity).
 
 -spec run_command(pid(), list()) -> {ok, ctx()} | {error, term()}.
 run_command(Pid, Command) when is_pid(Pid), is_list(Command) ->
-	gen_server:call(Pid, {q, <<"admin.$cmd">>, Command, get_timeout(), 0, -1, []}, infinity).
+  gen_server:call(Pid, {q, <<"admin.$cmd">>, Command, get_timeout(), 0, -1, []}, infinity).
 
 %% @doc Insert a document into mongodb
 -spec insert(pid(), binary(), binary(), ctx()) -> {ok, ctx()} | {error, term()}.
@@ -207,7 +207,7 @@ insert(Pid, DatabaseName, CollectionName, Document) when is_pid(Pid), is_binary(
 
 -spec insert(pid(), binary(), binary(), ctx(), ctx()) -> {ok, ctx()} | {error, term()}.
 insert(Pid, DatabaseName, CollectionName, Document, Options) when is_pid(Pid), is_binary(DatabaseName), is_binary(CollectionName), is_list(Document), is_list(Options) ->
-  gen_server:call(Pid, {i, <<DatabaseName/binary, <<".">>/binary, CollectionName/binary>>, Document, Options, get_timeout()}).
+  gen_server:call(Pid, {i, DatabaseName, CollectionName, Document, Options, get_timeout()}).
 
 %% @doc Find a single document
 -spec find_one(pid(), binary(), binary(), ctx()) -> {ok, ctx()} | {error, term()}.
@@ -227,54 +227,74 @@ find_one(Pid, DatabaseName, CollectionName, Document) when is_pid(Pid), is_binar
 % Stop the connection
 handle_call(stop, _From, State) ->
   % erlang:display("----------------------------------- handle_call : stop"),
-	% Disconnect the socket
-	_ = disconnect(State),
-	% return the state that the socket is properly closed
-	{stop, normal, ok, State};
+  % Disconnect the socket
+  _ = disconnect(State),
+  % return the state that the socket is properly closed
+  {stop, normal, ok, State};
 
-% 
+%
 % Handle query commands
 %
 handle_call({q, Collection, Document, Timeout, NumberToSkip, NumberToReturn, FlagsList}, _From, State) ->
-	% serialize the document to a bson object
-	BsonDocument = bson:serialize(Document),
-	% create a query binary query message
-  QueryBinary = mongodb_wire:create_query(mongopool:next_requestid(), Collection, NumberToSkip, NumberToReturn, FlagsList, BsonDocument, <<>>), 
+  % serialize the document to a bson object
+  BsonDocument = bson:serialize(Document),
+  % create a query binary query message
+  QueryBinary = mongodb_wire:create_query(mongopool:next_requestid(), Collection, NumberToSkip, NumberToReturn, FlagsList, BsonDocument, <<>>),
   % send the message
   send_and_receive(QueryBinary, false, Timeout, State);
 
 %
 % Handle insert commands
 %
-handle_call({i, FullCollectionName, Document, Options, Timeout}, _From, State) when is_binary(FullCollectionName), is_list(Document), is_list(Options), is_integer(Timeout) ->
-  erlang:display("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ insert"),
-  erlang:display(Document),
-	% serialize the document to a bson object
+handle_call({i, DatabaseName, CollectionName, Document, Options, Timeout}, _From, State) when is_binary(DatabaseName), is_binary(CollectionName), is_list(Document), is_list(Options), is_integer(Timeout) ->
+  % erlang:display("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ insert"),
+  % erlang:display(Document),
+  FullCollectionName = <<DatabaseName/binary, <<".">>/binary, CollectionName/binary>>,
+  % serialize the document to a bson object
   BsonDocument = bson:serialize(Document),
-  erlang:display("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ insert 1"),
-  erlang:display(binary_to_list(BsonDocument)),
-	% create a insert binary message
+  % erlang:display("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ insert 1"),
+  % erlang:display(binary_to_list(BsonDocument)),
+  % create a insert binary message
   InsertBinary = mongodb_wire:create_insert(mongopool:next_requestid(), FullCollectionName, 0, BsonDocument),
-  erlang:display("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ insert 2"),
+  % erlang:display("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ insert 2"),
   % send the message
   case send_and_receive(InsertBinary, true, Timeout, State) of
     {reply, {reply, ok}, State} ->
-      {reply, {reply, ok}, State};
+      execute_write_concern(Timeout, State, DatabaseName, Options);
     Error -> Error
-  end;  
+  end;
 
 % Handle queries
-handle_call(_CallName, _From, _State) -> 
+handle_call(_CallName, _From, _State) ->
   % erlang:display("----------------------------------- handle_call"),
   % erlang:display(CallName),
   % erlang:display(From),
   % erlang:display(State),
-	{noreply}.
-	
+  {noreply}.
+
+%
+% Handle the write concern settings for getLastError
+%
+execute_write_concern(Timeout, State, DatabaseName, [{safe, SafeOptions}|Options]) when is_boolean(SafeOptions) ->
+  execute_write_concern(Timeout, State, DatabaseName, [{safe, []}|Options]);
+execute_write_concern(Timeout, State, DatabaseName, [{safe, SafeOptions}|Options]) ->
+  % User has requested a safe write, we need to build a getLastError command and execute it
+  GetLastErrorCommand = [{<<"getLastError">>, 1}],
+  % Merge in the Safe options
+  Document = lists:merge(GetLastErrorCommand, SafeOptions),
+  % serialize the document to a bson object
+  BsonDocument = bson:serialize(Document),
+  % create a query binary query message
+  QueryBinary = mongodb_wire:create_query(mongopool:next_requestid(), <<DatabaseName/binary, <<".$cmd">>/binary>>, 0, -1, [], BsonDocument, <<>>),
+  % send the message
+  send_and_receive(QueryBinary, false, Timeout, State);
+execute_write_concern(Timeout, State, Collection, [H|T]) -> execute_write_concern(Timeout, State, Collection, T);
+execute_write_concern(_Timeout, State, _Collection, []) -> {reply, {reply, ok}, State}.
+
 %
 % Send the binary message
 %
-send_and_receive(Binary, SendOnly, Timeout, State) when is_binary(Binary), is_boolean(SendOnly), is_integer(Timeout) -> 
+send_and_receive(Binary, SendOnly, Timeout, State) when is_binary(Binary), is_boolean(SendOnly), is_integer(Timeout) ->
   % fire off message and ensure we have no error sending the message
   case gen_tcp:send(State#state.sock, Binary) of
     ok ->
@@ -293,33 +313,41 @@ send_and_receive(Binary, SendOnly, Timeout, State) when is_binary(Binary), is_bo
                   MongoReply = mongodb_wire:unpack_mongo_reply(BinaryResponse),
                   % Fetch the first document from the list of docs available
                   FirstDoc = lists:nth(1, proplists:get_value(docs, MongoReply)),
-                  % Check if we have an error (signaled by the errmsg field)
-                  case proplists:get_value(bson:utf8("errmsg"), FirstDoc) of
-                    undefined -> 
-                      {reply, {reply, MongoReply}, State};
-                    Error -> 
-                      {reply, {error, Error}, State}
+                  % If we have a list of docs get the first one
+                  case proplists:is_defined(docs, MongoReply) of
+                    true ->
+                      % Fetch the first document from the list of docs available
+                      FirstDoc = lists:nth(1, proplists:get_value(docs, MongoReply)),
+                      % Check if we have an error (signaled by the errmsg field)
+                      case proplists:get_value(bson:utf8("errmsg"), FirstDoc) of
+                        undefined ->
+                          {reply, {reply, MongoReply}, State};
+                        Error ->
+                          {reply, {error, Error}, State}
+                      end;
+                    false ->
+                      {reply, {reply, MongoReply}, State}
                   end;
                 Error ->
-            	    {reply, Error, State}
+                  {reply, Error, State}
               end;
             Error ->
-        	    {reply, Error, State}
+              {reply, Error, State}
           end
       end;
     Error ->
       {reply, Error, State}
   end.
 
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
+
+
+
+
+
+
+
+
+
+
+
+
