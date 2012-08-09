@@ -13,6 +13,7 @@
 
 % All exported usage methods
 -export([is_master/1, insert/4, insert/5, run_command/2, run_command/3, find_one/4]).
+-export([update/5, update/6]).
 
 %% ====================================================================
 %% constants
@@ -209,6 +210,15 @@ insert(Pid, DatabaseName, CollectionName, Document) when is_pid(Pid), is_binary(
 insert(Pid, DatabaseName, CollectionName, Document, Options) when is_pid(Pid), is_binary(DatabaseName), is_binary(CollectionName), is_list(Document), is_list(Options) ->
   gen_server:call(Pid, {i, DatabaseName, CollectionName, Document, Options, get_timeout()}).
 
+%% @doc Update a document in mongodb
+-spec update(pid(), binary(), binary(), ctx(), ctx()) -> {ok, ctx()} | {error, term()}.
+update(Pid, DatabaseName, CollectionName, QueryDocument, UpdateDocument) ->
+  update(Pid, DatabaseName, CollectionName, QueryDocument, UpdateDocument, []).
+
+-spec update(pid(), binary(), binary(), ctx(), ctx(), ctx()) -> {ok, ctx()} | {error, term()}.
+update(Pid, DatabaseName, CollectionName, QueryDocument, UpdateDocument, Options) ->
+  gen_server:call(Pid, {u, DatabaseName, CollectionName, QueryDocument, UpdateDocument, Options, get_timeout()}).
+
 %% @doc Find a single document
 -spec find_one(pid(), binary(), binary(), ctx()) -> {ok, ctx()} | {error, term()}.
 find_one(Pid, DatabaseName, CollectionName, Document) when is_pid(Pid), is_binary(DatabaseName), is_binary(CollectionName), is_list(Document) ->
@@ -247,18 +257,42 @@ handle_call({q, Collection, Document, Timeout, NumberToSkip, NumberToReturn, Fla
 % Handle insert commands
 %
 handle_call({i, DatabaseName, CollectionName, Document, Options, Timeout}, _From, State) when is_binary(DatabaseName), is_binary(CollectionName), is_list(Document), is_list(Options), is_integer(Timeout) ->
-  % erlang:display("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ insert"),
-  % erlang:display(Document),
   FullCollectionName = <<DatabaseName/binary, <<".">>/binary, CollectionName/binary>>,
   % serialize the document to a bson object
   BsonDocument = bson:serialize(Document),
-  % erlang:display("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ insert 1"),
-  % erlang:display(binary_to_list(BsonDocument)),
   % create a insert binary message
   InsertBinary = mongodb_wire:create_insert(mongopool:next_requestid(), FullCollectionName, 0, BsonDocument),
-  % erlang:display("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ insert 2"),
   % send the message
   case send_and_receive(InsertBinary, true, Timeout, State) of
+    {reply, {reply, ok}, State} ->
+      execute_write_concern(Timeout, State, DatabaseName, Options);
+    Error -> Error
+  end;
+
+%
+% Handle update commands
+%
+handle_call({u, DatabaseName, CollectionName, QueryDocument, UpdateDocument, Options, Timeout}, _From, State) when is_binary(DatabaseName), is_binary(CollectionName), is_list(QueryDocument), is_list(UpdateDocument), is_list(Options) ->
+  FullCollectionName = <<DatabaseName/binary, <<".">>/binary, CollectionName/binary>>,
+  % serialie the documents
+  BsonQueryDocument = bson:serialize(QueryDocument),
+  BsonUpdateDocument = bson:serialize(UpdateDocument),
+
+  % unpack upsert and multi options
+  Upsert = case proplists:is_defined(upsert, Options) of
+    true -> 1;
+    _ -> 0
+  end,
+  Multi = case proplists:is_defined(multi, Options) of
+    true -> 1;
+    _ -> 0
+  end,
+
+  % create a update binary message
+  UpdateBinary = mongodb_wire:create_update(mongopool:next_requestid(), FullCollectionName, 1, 1, BsonQueryDocument, BsonUpdateDocument),
+  erlang:display(UpdateBinary),
+  % send the message
+  case send_and_receive(UpdateBinary, true, Timeout, State) of
     {reply, {reply, ok}, State} ->
       execute_write_concern(Timeout, State, DatabaseName, Options);
     Error -> Error
