@@ -6,7 +6,6 @@
 % Run the socket as a general otp process
 -behaviour(gen_server).
 % -compile(export_all).
-
 -export([start_link/2, start_link/3, stop/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
@@ -25,10 +24,15 @@
 %% defined type
 %% ====================================================================
 -type address() :: string() | atom() | inet:ip_address().
--type portnum() :: non_neg_integer().
+-type portnum() :: 0..65535.
 -type ctx() :: any().
 -type rpb_req() :: atom() | tuple().
 -type connection_failure() :: {Reason::term(), FailureCount::integer()}.
+
+-type connection() :: pid().
+-type service()    :: {Host :: address(), Post :: portnum()}.
+-type options()    :: [option()].
+-type option()     :: {timeout, timeout()} | {ssl, boolean()} | ssl.
 
 %% ====================================================================
 %% records defining the state of a connection and a request

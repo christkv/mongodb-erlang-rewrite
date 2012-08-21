@@ -1,20 +1,8 @@
-{application, mongodb,
- [{description, "Mongodb Client"},
-  {vsn, "0.0.1"},
-  {modules, [
-             mongodb_wire
-            ]},
-  {applications, [
-                  kernel,
-                  stdlib
-                 ]},
-  {registered, []},
-  {env, [
-         %% Set default timeout for operations.
-         %% Individual operation timeouts can be supplied,
-         %% e.g. get_timeout, put_timeout that will 
-         %% override the default.
-         {timeout, 60000}
-        ]}
- ]}.
-
+{application,mongodb,
+             [{description,"Client interface to MongoDB, also known as the driver. See www.mongodb.org"},
+              {vsn,"c956e94"},
+              {registered,[]},
+              {applications,[kernel,stdlib]},
+              {mod,{mongo_app,[]}},
+              {modules,[bin_to_hex,mongo_app,mongo_reply,mongo_socket,
+                        mongo_sup,mongodb_wire,mongopool]}]}.
