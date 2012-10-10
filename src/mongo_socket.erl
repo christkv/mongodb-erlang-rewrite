@@ -29,10 +29,10 @@
 -type rpb_req() :: atom() | tuple().
 -type connection_failure() :: {Reason::term(), FailureCount::integer()}.
 
--type connection() :: pid().
--type service()    :: {Host :: address(), Post :: portnum()}.
--type options()    :: [option()].
--type option()     :: {timeout, timeout()} | {ssl, boolean()} | ssl.
+% -type connection() :: pid().
+% -type service()    :: {Host :: address(), Post :: portnum()}.
+% -type options()    :: [option()].
+% -type option()     :: {timeout, timeout()} | {ssl, boolean()} | ssl.
 
 %% ====================================================================
 %% records defining the state of a connection and a request
@@ -283,11 +283,11 @@ handle_call({u, DatabaseName, CollectionName, QueryDocument, UpdateDocument, Opt
   BsonUpdateDocument = bson:serialize(UpdateDocument),
 
   % unpack upsert and multi options
-  Upsert = case proplists:is_defined(upsert, Options) of
+  _Upsert = case proplists:is_defined(upsert, Options) of
     true -> 1;
     _ -> 0
   end,
-  Multi = case proplists:is_defined(multi, Options) of
+  _Multi = case proplists:is_defined(multi, Options) of
     true -> 1;
     _ -> 0
   end,
@@ -315,7 +315,7 @@ handle_call(_CallName, _From, _State) ->
 %
 execute_write_concern(Timeout, State, DatabaseName, [{safe, SafeOptions}|Options]) when is_boolean(SafeOptions) ->
   execute_write_concern(Timeout, State, DatabaseName, [{safe, []}|Options]);
-execute_write_concern(Timeout, State, DatabaseName, [{safe, SafeOptions}|Options]) ->
+execute_write_concern(Timeout, State, DatabaseName, [{safe, SafeOptions}|_Options]) ->
   % User has requested a safe write, we need to build a getLastError command and execute it
   GetLastErrorCommand = [{<<"getLastError">>, 1}],
   % Merge in the Safe options
@@ -326,7 +326,7 @@ execute_write_concern(Timeout, State, DatabaseName, [{safe, SafeOptions}|Options
   QueryBinary = mongodb_wire:create_query(mongopool:next_requestid(), <<DatabaseName/binary, <<".$cmd">>/binary>>, 0, -1, [], BsonDocument, <<>>),
   % send the message
   send_and_receive(QueryBinary, false, Timeout, State);
-execute_write_concern(Timeout, State, Collection, [H|T]) -> execute_write_concern(Timeout, State, Collection, T);
+execute_write_concern(Timeout, State, Collection, [_H|T]) -> execute_write_concern(Timeout, State, Collection, T);
 execute_write_concern(_Timeout, State, _Collection, []) -> {reply, {reply, ok}, State}.
 
 %

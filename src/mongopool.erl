@@ -230,7 +230,7 @@ handle_call({start_pool, _Host, _Port}, _From, State=#state{}) ->
 	{reply, {error, pool_already_started}, State};
 handle_call(check_out, _From, undefined) ->
 	{reply, {error, pool_not_started}, undefined};
-handle_call(check_out_all, _, State=#state{host=Host, port=Port, pids=Pids}) ->
+handle_call(check_out_all, _, State=#state{host=_Host, port=_Port, pids=Pids}) ->
   {reply, {ok, Pids}, State#state{pids=Pids}};
 handle_call(check_out, _From, State=#state{host=Host, port=Port, pids=Pids}) ->
 	case next_pid(Host, Port, Pids) of

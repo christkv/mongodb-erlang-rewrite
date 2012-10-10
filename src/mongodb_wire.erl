@@ -63,13 +63,13 @@ create_insert(RequestID, FullCollectionName, ContinueOnError, InsertMessages) wh
 	% Calculate total size of the wire command for insert, the wire message format is below
 	TotalInsertSize = (4 + 4 + 4 + 4) + (4) + (byte_size(FullCollectionName) + 1) + byte_size(InsertMessageBytes),
 	% Generate the 32 bit flag values and set ContinueOnError if defined
-	Flags = <<ContinueOnError:1, 0:31>>,
+	% Flags = <<0:31, ContinueOnError:1>>,
 	% Generate the single binary for the protocol
 	Message = <<?put_int32u(TotalInsertSize)
 			, ?put_int32u(RequestID)
 			, ?put_int32u(0)
 			, ?put_int32u(2002)
-			, Flags/binary
+			, ?put_int32u(ContinueOnError)
 			, FullCollectionName/binary, 0	% cstring terminated with 0
 			, InsertMessageBytes/binary
 		>>,
@@ -91,13 +91,12 @@ create_insert(RequestID, FullCollectionName, ContinueOnError, InsertMessages) wh
 create_update(RequestID, FullCollectionName, Upsert, MultiUpdate, Selector, Document) when is_integer(RequestID), is_binary(FullCollectionName), is_integer(Upsert), is_integer(MultiUpdate), is_binary(Selector), is_binary(Document) ->
 	% Calculate total size of the wire command for insert, the wire message format is below
 	TotalInsertSize = (4 + 4 + 4 + 4) + (4) + (byte_size(FullCollectionName) + 1) + (4) + byte_size(Selector) + byte_size(Document),
-  erlang:display("======================================================== create_update"),
-  erlang:display(binary:bin_to_list(FullCollectionName)),
-  erlang:display(binary:bin_to_list(Selector)),
-  erlang:display(binary:bin_to_list(Document)),
-  erlang:display(TotalInsertSize),
-  erlang:display("======================================================== create_update DONE"),
-
+  % erlang:display("======================================================== create_update"),
+  % erlang:display(binary:bin_to_list(FullCollectionName)),
+  % erlang:display(binary:bin_to_list(Selector)),
+  % erlang:display(binary:bin_to_list(Document)),
+  % erlang:display(TotalInsertSize),
+  % erlang:display("======================================================== create_update DONE"),
 	% Generate the 32 bit flag values and set ContinueOnError if defined
 	Flags = <<Upsert:1, MultiUpdate:1, 0:30>>,
 	% Generate the single binary for the protocol

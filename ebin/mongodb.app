@@ -1,6 +1,6 @@
 {application,mongodb,
              [{description,"Client interface to MongoDB, also known as the driver. See www.mongodb.org"},
-              {vsn,"c956e94"},
+              {vsn,"7fb4cb2"},
               {registered,[]},
               {applications,[kernel,stdlib]},
               {mod,{mongo_app,[]}},
